@@ -31,3 +31,17 @@ func Assert(res bool) {
 		Fatal(res)
 	}
 }
+
+// o => -o
+// plugin => -plugin, --plugin
+func AddDashes(option string) []string {
+	res := []string{}
+
+	if len(option) == 1 {
+		res = append(res, "-"+option)
+	} else {
+		res = append(res, "-"+option, "--"+option)
+	}
+
+	return res
+}
