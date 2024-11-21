@@ -11,3 +11,10 @@ func MustHaveMagic(content []byte) {
 		utils.Fatal("Invalid magic number")
 	}
 }
+
+func CheckMagic (content []byte) bool {
+	if !bytes.HasPrefix(content, []byte("\177ELF")) {
+		return false
+	}
+	return true
+}
