@@ -45,3 +45,15 @@ func AddDashes(option string) []string {
 
 	return res
 }
+
+func ReadSlice[T any](content []byte, size int) []T {
+	Assert(len(content) % size == 0)
+	ret := make([]T, 0)
+	for len(content) > 0 {
+		var ele T
+		Read[T](content, &ele)
+		ret = append(ret, ele)
+		content = content[size:]
+	}
+	return ret
+}
