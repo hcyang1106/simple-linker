@@ -2,6 +2,7 @@ package linker
 
 import (
 	"bytes"
+	"debug/elf"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -62,6 +63,21 @@ type Sym struct {
 	Shndx uint16
 	Val   uint64
 	Size  uint64
+}
+
+func (s *Sym) GetShndx(table []uint32, idx uint32) uint32 {
+	if elf.SectionIndex(s.Shndx) != elf.SHN_XINDEX {
+		return uint32(s.Shndx)
+	}
+	return table[idx]
+}
+
+func (s *Sym) IsAbs() bool {
+	return s.Shndx == uint16(elf.SHN_ABS)
+}
+
+func (s *Sym) IsUndef() bool {
+	return s.Shndx == uint16(elf.SHN_UNDEF)
 }
 
 type ArHdr struct {
