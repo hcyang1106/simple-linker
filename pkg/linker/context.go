@@ -16,15 +16,21 @@ type Args struct {
 
 type Context struct {
 	Args Args
+	SymbolMap map[string]*Symbol
 }
 
 func NewContext() *Context {
 	return &Context{
-		Args{
+		Args: Args{
 			Output:  "a.out",
 			Machine: MachineTypeNone,
 		},
+		SymbolMap: make(map[string]*Symbol),
 	}
+}
+
+func (c *Context) AddSymbol(name string, symbol *Symbol) {
+	c.SymbolMap[name] = symbol
 }
 
 func (c *Context) ParseArgs(ctx *Context, version string) []string {
@@ -116,16 +122,14 @@ func (c *Context) FillInObjFiles(remaining []string) {
 			for _, file := range files {
 				utils.Assert(GetFileTypeFromContent(file.Content) == FileTypeObject)
 				CheckFileCompatibility(c, file)
-				obj := NewObjectFile(file, false)
-				c.Args.ObjFiles = append(c.Args.ObjFiles, obj)
+				NewObjectFile(file, false, c)
 			}
 			continue
 		}
 
 		file := NewFile(name)
 		CheckFileCompatibility(c, file)
-		obj := NewObjectFile(file, true)
-		c.Args.ObjFiles = append(c.Args.ObjFiles, obj)
+		NewObjectFile(file, true, c)
 	}
 }
 
@@ -174,4 +178,12 @@ func (c *Context) readArchiveMembers(filename string) []*File {
 		pos += arHdr.GetSize()
 	}
 	return ret
+}
+
+func (c *Context) GetSymbol(name string) *Symbol {
+	if sym, ok := c.SymbolMap[name]; ok {
+		return sym
+	}
+	c.SymbolMap[name] = NewSymbol(nil, "") // for file with definition ot overwrite
+	return c.SymbolMap[name]
 }
