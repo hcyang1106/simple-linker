@@ -1,6 +1,7 @@
 package linker
 
 import (
+	"debug/elf"
 	"fmt"
 	"github.com/hcyang1106/simple-linker/pkg/utils"
 	"os"
@@ -15,8 +16,13 @@ type Args struct {
 }
 
 type Context struct {
-	Args Args
-	SymbolMap map[string]*Symbol
+	Args           Args
+	SymbolMap      map[string]*Symbol
+	MergedSections []*MergedSection
+	InternalObj    *ObjectFile
+	InternalEsyms  []Sym
+	Buf []byte
+	Ehdr *OutputEhdr
 }
 
 func NewContext() *Context {
@@ -62,6 +68,10 @@ func (c *Context) ParseArgs(ctx *Context, version string) []string {
 			}
 
 			// -plugin-opt=
+			// this part is necessary
+			// otherwise the code below this part
+			// will get the wrong argument (with =)
+			// -melf64.... versus -plugin-opt=XXX
 			if len(option) > 1 {
 				opt += "="
 			}
@@ -113,6 +123,8 @@ func (c *Context) ParseArgs(ctx *Context, version string) []string {
 	return remaining
 }
 
+// note that obj files in archive files are not alive
+// and those are in archive files are alive
 func (c *Context) FillInObjFiles(remaining []string) {
 	for _, name := range remaining {
 		// lib file
@@ -133,6 +145,7 @@ func (c *Context) FillInObjFiles(remaining []string) {
 	}
 }
 
+// -L specifies the library path, and -l specifies the filename
 func (c *Context) readArchiveMembers(filename string) []*File {
 	var file *File
 	for _, path := range c.Args.LibraryPaths {
@@ -172,7 +185,7 @@ func (c *Context) readArchiveMembers(filename string) []*File {
 		ret = append(ret, &File{
 			Name:    arHdr.ReadName(strTab),
 			Content: content[pos : pos+arHdr.GetSize()],
-			Parent: file,
+			Parent:  file,
 		})
 
 		pos += arHdr.GetSize()
@@ -186,4 +199,44 @@ func (c *Context) GetSymbol(name string) *Symbol {
 	}
 	c.SymbolMap[name] = NewSymbol(nil, "") // for file with definition ot overwrite
 	return c.SymbolMap[name]
+}
+
+// bitwise not => ^
+// bitwise negation => ~
+// only mergeable sections with same name, flag, and type could be merged
+func (c *Context) GetMergedSection(iSec *InputSection) *MergedSection {
+	outName := iSec.GetOutputSectionName()
+	flags := iSec.Shdr.Flags & ^uint64(elf.SHF_GROUP) & ^uint64(elf.SHF_MERGE) &
+		^uint64(elf.SHF_STRINGS) & ^uint64(elf.SHF_COMPRESSED)
+	typ := iSec.Shdr.Type
+
+	var ret *MergedSection
+	for _, mSec := range c.MergedSections {
+		if mSec.Name != outName || mSec.Shdr.Flags != flags ||
+			mSec.Shdr.Type != typ {
+			continue
+		}
+		ret = mSec
+	}
+
+	if ret != nil {
+		return ret
+	}
+
+	newMSec := NewMergedSection(outName, flags, typ)
+	c.MergedSections = append(c.MergedSections, newMSec)
+	return newMSec
+}
+
+// not initialized
+func (ctx *Context) CreateInternalFile() {
+	obj := &ObjectFile{}
+	ctx.InternalObj = obj
+	ctx.Args.ObjFiles = append(ctx.Args.ObjFiles, obj)
+	// first symbol is empty
+	ctx.InternalEsyms = make([]Sym, 1)
+	obj.Symbols = append(ctx.InternalObj.Symbols, NewSymbol(obj, ""))
+	obj.IsAlive = true
+	obj.FirstGlobal = 1
+	obj.ElfSyms = ctx.InternalEsyms
 }

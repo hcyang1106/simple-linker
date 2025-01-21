@@ -36,3 +36,12 @@ func ClearUnusedFiles(ctx *Context) {
 	}
 	ctx.Args.ObjFiles = ctx.Args.ObjFiles[:i]
 }
+
+// change symbol corresponding sections to "segments"
+func ChangeMSecsSymbolsSection(ctx *Context) {
+	for _, file := range ctx.Args.ObjFiles {
+		file.ChangeMSecsSymbolsSection()
+	}
+}
+
+//func CreateSyntheticSections()

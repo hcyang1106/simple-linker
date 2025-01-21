@@ -47,7 +47,7 @@ func AddDashes(option string) []string {
 }
 
 func ReadSlice[T any](content []byte, size int) []T {
-	Assert(len(content) % size == 0)
+	Assert(len(content)%size == 0)
 	ret := make([]T, 0)
 	for len(content) > 0 {
 		var ele T
@@ -56,4 +56,35 @@ func ReadSlice[T any](content []byte, size int) []T {
 		content = content[size:]
 	}
 	return ret
+}
+
+func CountZeros(input uint64) uint8 {
+	count := uint8(0)
+	for input != 1 {
+		count += 1
+		input = input >> 1
+	}
+	Assert(input == 1)
+	return count
+}
+
+// return start of NULL
+func FindNull(data []byte, start uint64, end uint64, size int) (uint64, bool) {
+	for start < end {
+		curr := data[start : start+uint64(size)]
+		if IsNull(curr, size) {
+			return start, true
+		}
+		start += uint64(size)
+	}
+	return 0, false
+}
+
+func IsNull(curr []byte, size int) bool {
+	for i := 0; i < size; i++ {
+		if curr[i] != 0 {
+			return false
+		}
+	}
+	return true
 }
