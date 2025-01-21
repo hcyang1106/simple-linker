@@ -3,10 +3,10 @@ package linker
 import (
 	"bytes"
 	"debug/elf"
+	"github.com/hcyang1106/simple-linker/pkg/utils"
 	"strconv"
 	"strings"
 	"unsafe"
-	"github.com/hcyang1106/simple-linker/pkg/utils"
 )
 
 const EhdrSize = int(unsafe.Sizeof(Ehdr{}))
@@ -80,6 +80,10 @@ func (s *Sym) IsUndef() bool {
 	return s.Shndx == uint16(elf.SHN_UNDEF)
 }
 
+func (s *Sym) IsCommon() bool {
+	return s.Shndx == uint16(elf.SHN_COMMON)
+}
+
 type ArHdr struct {
 	Name [16]byte
 	Date [12]byte
@@ -94,10 +98,12 @@ func (a *ArHdr) HasPrefix(s string) bool {
 	return strings.HasPrefix(string(a.Name[:]), s)
 }
 
+// just a rule of how to determine string table
 func (a *ArHdr) IsStrTab() bool {
 	return a.HasPrefix("// ")
 }
 
+// not used, just jump across this section
 func (a *ArHdr) IsSymtab() bool {
 	return a.HasPrefix("/ ") || a.HasPrefix("/SYM64/ ")
 }
@@ -109,9 +115,10 @@ func (a *ArHdr) GetSize() int {
 	return size
 }
 
-func (a *ArHdr)  ReadName(strTab []byte) string {
+func (a *ArHdr) ReadName(strTab []byte) string {
 	// Long Name
 	// "/123    " => the number is the start index in strTab
+	// why trim space? => name is not necessary to be 10 bytes long
 	if a.HasPrefix("/") {
 		trimmed := strings.TrimSpace(string(a.Name[1:]))
 		start, err := strconv.Atoi(trimmed)
@@ -127,5 +134,5 @@ func (a *ArHdr)  ReadName(strTab []byte) string {
 
 func ElfGetName(strTab []byte, offset uint32) string {
 	length := uint32(bytes.Index(strTab[offset:], []byte{0}))
-	return string(strTab[offset:offset + length])
+	return string(strTab[offset : offset+length])
 }
