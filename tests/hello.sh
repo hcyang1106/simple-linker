@@ -13,7 +13,6 @@ mkdir -p $test_path
 # -o => provide custom names
 cat <<EOF | $CC -xc - -c -o $test_path/a.o
 #include <stdio.h>
-
 int main(void) {
     printf("Hello World\n");
     return 0;
@@ -27,5 +26,5 @@ EOF
 # use gcc linker to make a real executable
 # -B. => find a linker in the current directory
 # -B finds a program called ld, therefore we should make our executable name ld
-$CC -B. -static "$t"/a.o -o "$t"/out
+$CC -B. -static $test_path/a.o -o $test_path/out
 
