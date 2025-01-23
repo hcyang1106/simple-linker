@@ -88,3 +88,11 @@ func IsNull(curr []byte, size int) bool {
 	}
 	return true
 }
+
+func AlignTo(val, align uint64) uint64 {
+	if align <= 1 {
+		return val
+	}
+
+	return (val + align - 1) &^ (align - 1) // do bitwise not, then bitwise and
+}

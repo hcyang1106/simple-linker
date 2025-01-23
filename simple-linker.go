@@ -50,6 +50,20 @@ func main() {
 	fmt.Println("symbol count", len(ctx.SymbolMap))
 
 	linker.ChangeMSecsSymbolsSection(ctx)
+	linker.CreateSyntheticSections(ctx)
+
+	fileSize := linker.GetFileSize(ctx)
+	ctx.Buf = make([]byte, fileSize)
+	file, err := os.OpenFile(ctx.Args.Output, os.O_RDWR | os.O_CREATE, 0777)
+	utils.MustNo(err)
+
+	// after creating the buf, we could write into buf
+	for _, writer := range ctx.OutputWriters {
+		writer.CopyBuf(ctx)
+	}
+
+	_, err = file.Write(ctx.Buf)
+	utils.MustNo(err)
 
 	os.Exit(0)
 }

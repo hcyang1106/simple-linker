@@ -12,9 +12,13 @@ func MustHaveMagic(content []byte) {
 	}
 }
 
-func CheckMagic (content []byte) bool {
+func CheckMagic(content []byte) bool {
 	if !bytes.HasPrefix(content, []byte("\177ELF")) {
 		return false
 	}
 	return true
+}
+
+func WriteMagic(content []byte) {
+	copy(content, "\177ELF")
 }

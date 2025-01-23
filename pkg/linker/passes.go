@@ -1,5 +1,9 @@
 package linker
 
+import (
+	"github.com/hcyang1106/simple-linker/pkg/utils"
+)
+
 func MarkLiveObjects(ctx *Context) {
 	roots := make([]*ObjectFile, 0)
 	for _, file := range ctx.Args.ObjFiles {
@@ -44,4 +48,18 @@ func ChangeMSecsSymbolsSection(ctx *Context) {
 	}
 }
 
-//func CreateSyntheticSections()
+func CreateSyntheticSections(ctx *Context) {
+	ctx.OutputEhdrWriter = NewOutputEhdrWriter()
+	ctx.OutputWriters = append(ctx.OutputWriters, ctx.OutputEhdrWriter)
+}
+
+// get called after CreateSyntheticSections,
+// since OutputWriters have to be filled
+func GetFileSize(ctx *Context) uint64 {
+	offset := uint64(0)
+	for _, o := range ctx.OutputWriters {
+		offset = utils.AlignTo(offset, o.GetShdr().AddrAlign)
+		offset += o.GetShdr().Size
+	}
+	return offset
+}

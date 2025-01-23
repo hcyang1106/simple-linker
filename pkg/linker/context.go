@@ -16,13 +16,14 @@ type Args struct {
 }
 
 type Context struct {
-	Args           Args
-	SymbolMap      map[string]*Symbol
-	MergedSections []*MergedSection
-	InternalObj    *ObjectFile
-	InternalEsyms  []Sym
-	Buf []byte
-	Ehdr *OutputEhdr
+	Args             Args
+	SymbolMap        map[string]*Symbol
+	MergedSections   []*MergedSection
+	InternalObj      *ObjectFile
+	InternalEsyms    []Sym
+	Buf              []byte
+	OutputWriters    []iOutputWriter // note that it's not *iOutputWriter
+	OutputEhdrWriter *OutputEhdrWriter
 }
 
 func NewContext() *Context {
