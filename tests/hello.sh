@@ -14,7 +14,7 @@ mkdir -p $test_path
 cat <<EOF | $CC -xc - -c -o $test_path/a.o
 #include <stdio.h>
 int main(void) {
-    printf("Hello World\n");
+    printf("Hello, World\n");
     return 0;
 }
 EOF
@@ -27,4 +27,4 @@ EOF
 # -B. => find a linker in the current directory
 # -B finds a program called ld, therefore we should make our executable name ld
 $CC -B. -static $test_path/a.o -o $test_path/out
-
+qemu-riscv64 $test_path/out

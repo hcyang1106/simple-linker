@@ -9,11 +9,16 @@ import (
 	"unsafe"
 )
 
+const ADDR_BASE uint64 = 0x200000
+const EF_RISCV_RVC uint32 = 1
+const PageSize = 4096
+
 const EhdrSize = int(unsafe.Sizeof(Ehdr{}))
 const ShdrSize = int(unsafe.Sizeof(Shdr{}))
 const SymSize = int(unsafe.Sizeof(Sym{}))
 const PhdrSize = int(unsafe.Sizeof(Phdr{}))
 const AhdrSize = int(unsafe.Sizeof(ArHdr{}))
+const RelaSize = int(unsafe.Sizeof(Rela{}))
 
 type Ehdr struct {
 	Ident     [16]uint8
@@ -63,6 +68,13 @@ type Sym struct {
 	Shndx uint16
 	Val   uint64
 	Size  uint64
+}
+
+type Rela struct {
+	Offset uint64
+	Type   uint32
+	Sym    uint32
+	Addend int64
 }
 
 func (s *Sym) GetShndx(table []uint32, idx uint32) uint32 {
