@@ -16,14 +16,17 @@ type Args struct {
 }
 
 type Context struct {
-	Args             Args
-	SymbolMap        map[string]*Symbol
-	MergedSections   []*MergedSection
-	InternalObj      *ObjectFile
-	InternalEsyms    []Sym
-	Buf              []byte
-	OutputWriters    []iOutputWriter // note that it's not *iOutputWriter
-	OutputEhdrWriter *OutputEhdrWriter
+	Args                   Args
+	SymbolMap              map[string]*Symbol
+	MergedSections         []*MergedSection
+	Buf                    []byte
+	OutputWriters          []iOutputWriter // note that it's not *iOutputWriter
+	OutputEhdrWriter       *OutputEhdrWriter
+	OutputShdrsWriter      *OutputShdrsWriter
+	OutputPhdrsWriter      *OutputPhdrsWriter
+	OutputGotSectionWriter *OutputGotSectionWriter
+	OutputSections         []*OutputSection
+	TLSSegmentAddr         uint64
 }
 
 func NewContext() *Context {
@@ -230,14 +233,14 @@ func (c *Context) GetMergedSection(iSec *InputSection) *MergedSection {
 }
 
 // not initialized
-func (ctx *Context) CreateInternalFile() {
-	obj := &ObjectFile{}
-	ctx.InternalObj = obj
-	ctx.Args.ObjFiles = append(ctx.Args.ObjFiles, obj)
-	// first symbol is empty
-	ctx.InternalEsyms = make([]Sym, 1)
-	obj.Symbols = append(ctx.InternalObj.Symbols, NewSymbol(obj, ""))
-	obj.IsAlive = true
-	obj.FirstGlobal = 1
-	obj.ElfSyms = ctx.InternalEsyms
-}
+//func (ctx *Context) CreateInternalFile() {
+//	obj := &ObjectFile{}
+//	ctx.InternalObj = obj
+//	ctx.Args.ObjFiles = append(ctx.Args.ObjFiles, obj)
+//	// first symbol is empty
+//	ctx.InternalEsyms = make([]Sym, 1)
+//	obj.Symbols = append(ctx.InternalObj.Symbols, NewSymbol(obj, ""))
+//	obj.IsAlive = true
+//	obj.FirstGlobal = 1
+//	obj.ElfSyms = ctx.InternalEsyms
+//}
