@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/hcyang1106/simple-linker/pkg/linker"
 	"github.com/hcyang1106/simple-linker/pkg/utils"
 	"os"
@@ -39,20 +38,42 @@ func main() {
 	}
 
 	ctx.FillInObjFiles(remaining) // remaining contains specific libraries or obj files
-	ctx.CreateInternalFile()
-
-	fmt.Println(len(ctx.Args.ObjFiles))
 
 	linker.MarkLiveObjects(ctx)
-	fmt.Println("symbol count", len(ctx.SymbolMap))
 	linker.ClearSymbolsAndFiles(ctx) // after marking alive files, we delete unused files and symbols in context
-	fmt.Println(len(ctx.Args.ObjFiles))
-	fmt.Println("symbol count", len(ctx.SymbolMap))
 
+	// loop through all the symbols in file and reset related input section to fragment
 	linker.ChangeMSecsSymbolsSection(ctx)
-	linker.CreateSyntheticSections(ctx)
 
-	fileSize := linker.GetFileSize(ctx)
+	// for shdr, ehdr, phdr, got
+	// need to update size and offset, but before that outputwriters slice should be confirmed
+	// also need to update ehdr fields
+	linker.CreateSpecialWriters(ctx)
+	// fragment offsets can only be calculated after frags are confirmed (as well as the merged section size)
+	linker.UpdateFragmentOffsetAndMergedSectionSizeAlign(ctx)
+
+	// since some input sections are set to nil
+	linker.SetOutputSectionInputSections(ctx)
+	// same as frags, need to confirm the containing input sections first
+	// so that offset and size can be calculated
+	linker.UpdateInputSectionOffsetAndOutputSectionSizeAlign(ctx)
+
+	writers := linker.CollectOutputSectionWritersAndMergedSectionWriters(ctx)
+	ctx.OutputWriters = append(ctx.OutputWriters, writers...)
+	linker.SortOutputWriters(ctx)
+
+	// size cannot be confirmed until all writers all confirmed
+	for _, o := range ctx.OutputWriters {
+		o.UpdateSize(ctx)
+	}
+
+	// only TLS symbols will appear in GOT
+	linker.ScanRelsAndAddSymsToGot(ctx)
+
+	// set offset of all the writers
+	// should be after sizes are set
+	fileSize := linker.SetOutputShdrOffsets(ctx)
+	println("File Size:", fileSize, "bytes")
 	ctx.Buf = make([]byte, fileSize)
 	file, err := os.OpenFile(ctx.Args.Output, os.O_RDWR | os.O_CREATE, 0777)
 	utils.MustNo(err)
