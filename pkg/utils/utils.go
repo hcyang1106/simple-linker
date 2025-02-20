@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math/bits"
 	"os"
 	"runtime/debug"
 )
@@ -22,8 +23,22 @@ func MustNo(err error) {
 
 func Read[T any](content []byte, val *T) {
 	reader := bytes.NewReader(content)
-	err := binary.Read(reader, binary.LittleEndian, val) //RISC-V uses little endian
+	err := binary.Read(reader, binary.LittleEndian, val) // RISC-V uses little endian
 	MustNo(err)
+}
+
+func ReadWithReturn[T any](data []byte) (val T) {
+	reader := bytes.NewReader(data)
+	err := binary.Read(reader, binary.LittleEndian, &val)
+	MustNo(err)
+	return
+}
+
+func Write[T any](buf []byte, val T) {
+	b := &bytes.Buffer{}
+	err := binary.Write(b, binary.LittleEndian, val) //RISC-V uses little endian
+	MustNo(err)
+	copy(buf, b.Bytes())
 }
 
 func Assert(res bool) {
@@ -90,9 +105,53 @@ func IsNull(curr []byte, size int) bool {
 }
 
 func AlignTo(val, align uint64) uint64 {
-	if align <= 1 {
+	if align == 0 {
 		return val
 	}
 
 	return (val + align - 1) &^ (align - 1) // do bitwise not, then bitwise and
+}
+
+// ToP2Align converts using counting the zeros at the end
+func ToP2Align(align uint64) uint8 {
+	if align == 0 {
+		return 0
+	}
+	return uint8(bits.TrailingZeros64(align))
+}
+
+func hasSingleBit(n uint64) bool {
+	return n&(n-1) == 0
+}
+
+func BitCeil(val uint64) uint64 {
+	if hasSingleBit(val) {
+		return val
+	}
+	return 1 << (64 - bits.LeadingZeros64(val))
+}
+
+type Uint interface {
+	uint8 | uint16 | uint32 | uint64
+}
+
+func Bit[T Uint](val T, pos int) T {
+	return (val >> pos) & 1
+}
+
+func Bits[T Uint](val T, hi T, lo T) T {
+	return (val >> lo) & ((1 << (hi - lo + 1)) - 1)
+}
+
+func SignExtend(val uint64, size int) uint64 {
+	return uint64(int64(val<<(63-size)) >> (63 - size))
+}
+
+func AllZeros(bs []byte) bool {
+	b := byte(0)
+	for _, s := range bs {
+		b |= s
+	}
+
+	return b == 0
 }

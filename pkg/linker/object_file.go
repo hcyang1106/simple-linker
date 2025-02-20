@@ -1,6 +1,7 @@
 package linker
 
 import (
+	"bytes"
 	"debug/elf"
 	"github.com/hcyang1106/simple-linker/pkg/utils"
 )
@@ -68,6 +69,10 @@ func NewObjectFile(file *File, isAlive bool, ctx *Context) {
 
 	f.Parse(ctx)
 	ctx.Args.ObjFiles = append(ctx.Args.ObjFiles, &f)
+}
+
+func (f *ObjectFile) GetEhdr() *Ehdr {
+	return &f.ElfEhdr
 }
 
 func (f *ObjectFile) GetBytesFromShdr(s *Shdr) []byte {
@@ -181,15 +186,17 @@ func (f *ObjectFile) ParseSymbols(ctx *Context) {
 func (f *ObjectFile) Parse(ctx *Context) {
 	f.ParseSymTab()         // fill in elfSyms (name is simply the offset)
 	f.ParseSymtabShndxSec() // if there exist the section
-	f.ParseInputSections()
+	f.ParseInputSections(ctx)
+	f.SkipEhframeSections()
 	f.ParseSymbols(ctx)           // should be after parsing sections, set up sym arrays and global syms
+	// change the "mergeable input sections" into mergeable sections
 	f.ParseMergeableSections(ctx) // create mergeable section array, and store fragments into merged section in ctx
 }
 
 // fill in input sections field
 // in demonstrated code, if section type falls in those special types,
 // then fill in nil in the array
-func (f *ObjectFile) ParseInputSections() {
+func (f *ObjectFile) ParseInputSections(ctx *Context) {
 	var i uint32
 	for _, hdr := range f.ElfSecHdrs {
 		switch elf.SectionType(hdr.Type) {
@@ -204,9 +211,28 @@ func (f *ObjectFile) ParseInputSections() {
 			iSection := NewInputSection(f, iContent, i, &f.ElfSecHdrs[i], iName)
 			iSection.SetInputSectionSize(hdr.Size)
 			iSection.SetP2Align(hdr.AddrAlign)
+			oSection := iSection.GetInputSectionOutputSection(ctx)
+			iSection.SetInputSectionOutputSection(oSection)
+			// the following line is different from how the tutorial did
+			// it uses an extra pass
+			// wrong!
+			// oSection.InputSections = append(oSection.InputSections, iSection)
 			f.InputSections = append(f.InputSections, iSection)
 		}
 		i += 1
+	}
+
+	i = 0
+	for _, shdr := range f.ElfSecHdrs {
+		if shdr.Type != uint32(elf.SHT_RELA) {
+			i++
+			continue
+		}
+		if target := f.InputSections[shdr.Info]; target != nil {
+			utils.Assert(target.RelSecIdx == 0)
+			target.RelSecIdx = i
+		}
+		i++
 	}
 }
 
@@ -242,21 +268,32 @@ func (f *ObjectFile) ParseMergeableSections(ctx *Context) {
 	f.MergeableSections = make([]*MergeableSection, f.TotalSecs)
 	var i uint32
 	for _, iSec := range f.InputSections {
-		if iSec == nil {
-			i += 1
-			continue
-		}
-		if iSec.IsAlive && (iSec.Shdr.Flags&uint64(elf.SHF_MERGE) != 0) {
-			f.MergeableSections[i] = f.SplitSection(ctx, iSec)
+		if iSec != nil && iSec.IsAlive && (iSec.Shdr.Flags&uint64(elf.SHF_MERGE) != 0) {
+			f.MergeableSections[i] = f.CreateMSecBySetupMergedSecAndSplitSection(ctx, iSec)
 			iSec.IsAlive = false // this input section no longer used
 		}
 		i += 1
 	}
 }
 
+func findNull(data []byte, entSize int) int {
+	if entSize == 1 {
+		return bytes.Index(data, []byte{0})
+	}
+
+	for i := 0; i <= len(data)-entSize; i += entSize {
+		bs := data[i : i+entSize]
+		if utils.AllZeros(bs) {
+			return i
+		}
+	}
+
+	return -1
+}
+
 // mergeable sections have two types: strings/constants
 // fill in fragOffsets, strs (raw data), and fragments
-func (f *ObjectFile) SplitSection(ctx *Context, iSec *InputSection) *MergeableSection {
+func (f *ObjectFile) CreateMSecBySetupMergedSecAndSplitSection(ctx *Context, iSec *InputSection) *MergeableSection {
 	m := &MergeableSection{}
 	m.OutputSection = ctx.GetMergedSection(iSec) // find using name, type, and flag, if not found create one
 	m.P2Align = iSec.P2Align
@@ -301,6 +338,18 @@ func (f *ObjectFile) SplitSection(ctx *Context, iSec *InputSection) *MergeableSe
 // we fill in the specific fragment and the offset within the fragment
 // we can think of fragments as smaller sections and we no longer use the original large sections (before split)
 func (f *ObjectFile) ChangeMSecsSymbolsSection() {
+	//for _, m := range f.MergeableSections {
+	//	if m == nil {
+	//		continue
+	//	}
+	//
+	//	m.Fragments = make([]*SectionFragment, 0, len(m.Strs))
+	//	for i := 0; i < len(m.Strs); i++ {
+	//		m.Fragments = append(m.Fragments,
+	//			m.OutputSection.Insert(m.Strs[i], m.P2Align))
+	//	}
+	//}
+
 	var i uint32
 	for i < f.TotalSyms {
 		esym := f.ElfSyms[i]
@@ -321,5 +370,22 @@ func (f *ObjectFile) ChangeMSecsSymbolsSection() {
 		sym.SetSectionFragment(frag)
 		sym.Value = fragOffset
 		i += 1
+	}
+}
+
+func (o *ObjectFile) SkipEhframeSections() {
+	for _, isec := range o.InputSections {
+		if isec != nil && isec.IsAlive && isec.Name == ".eh_frame" {
+			isec.IsAlive = false
+		}
+	}
+}
+
+func (o *ObjectFile) ScanRelsFindGotSyms() {
+	for _, isec := range o.InputSections {
+		if isec != nil && isec.IsAlive &&
+			isec.Shdr.Flags&uint64(elf.SHF_ALLOC) != 0 {
+			isec.ScanRelsFindGotSyms()
+		}
 	}
 }

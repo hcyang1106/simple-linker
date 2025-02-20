@@ -30,3 +30,7 @@ func (s *SectionFragment) SetP2Align(align uint8) {
 func (s *SectionFragment) SetOutputSection(output *MergedSection) {
 	s.OutputSection = output
 }
+
+func (s *SectionFragment) GetAddr() uint64 {
+	return s.OutputSection.Shdr.Addr + uint64(s.Offset)
+}
