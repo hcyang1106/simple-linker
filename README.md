@@ -6,7 +6,7 @@ This is a simple linker implementation that helps me learn how a linker works.
 
 ## ELF File Format Overview
 
-<img src="images/ELF_overview.png" width="400">
+<img src="images/ELF_overview.png" width="550">
 *Image source: [ics.uci.edu](https://ics.uci.edu/~aburtsev/238P/hw/hw3-elf/hw3-elf.html)*
 
 ### 1. What is ELF?
@@ -30,7 +30,7 @@ This is a simple linker implementation that helps me learn how a linker works.
     - Which parts of the ELF file are **code** (executable).
     - Which parts are **data** and **read-only data**.
     - Where to place the **BSS** section in process memory.
-- These permission restrictions are used to setup the page table entries while memory mapping in loader.
+- These permission restrictions are used to setup the **page table entries** while memory mapping in loader.
 
 ---
 
@@ -97,4 +97,32 @@ These headers are **not used by the OS loader** at runtime but are essential for
   - `SHF_STRINGS` — Contains NUL-terminated strings.
 
 ---
+
+## Parsing Object Files
+
+**NewObjectFile finishes parsing the object file in the function.**
+
+---
+
+## Parsing Ehdr-related Fields
+
+1. **Read Ehdr and verify magic number**
+  - When an object file is opened, the linker enters `NewObjectFile`.
+  - The first step is to parse the **ELF header (Ehdr)**.
+  - Check the **magic number** (`0x7F 'E' 'L' 'F'`) in `Ehdr.Ident` to ensure this is a valid ELF file.
+
+2. **Parse section headers**
+  - If the ELF header is valid, read the **section header table** using:
+    - `Ehdr.Shoff` → file offset of the section headers.
+    - `Ehdr.Shnum` → number of section header entries.
+  - This step loads the all the section headers into the object file structure.
+
+3. **Locate and read the section name string table**
+  - The index of the section name string table (`.shstrtab`) is stored in **`Ehdr.Shstrndx`**.
+  - Use this index to find the `.shstrtab` section in the section header table.
+  - Store the section name table into the object file structure.
+
+---
+
+## Parsing Symbol Table
 
