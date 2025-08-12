@@ -100,7 +100,7 @@ These headers are **not used by the OS loader** at runtime but are essential for
 
 ## Parsing Object Files
 
-**NewObjectFile finishes parsing the object file in the function.**
+**After executing `NewObjectFile`, the linker finishes parsing the object file.**
 
 ---
 
@@ -124,5 +124,28 @@ These headers are **not used by the OS loader** at runtime but are essential for
 
 ---
 
-## Parsing Symbol Table
+## Symbol Table Parsing Workflow
+
+1. **Locate the symbol table section**
+  - Iterate through section headers and use the `Type` field to find the section with:
+    - `SHT_SYMTAB` (regular symbol table)
+
+2. **Parse and store symbols**
+  - Once found, read the symbol table entries from the section’s file offset.
+  - Store the parsed entries in `ObjectFile.ElfSyms`.
+
+3. **`Info` field — first global symbol index**
+  - In the symbol table section’s header (`Shdr.Info`), the value represents the index of the **first global symbol**.
+  - All symbols before this index are **local** symbols.
+
+4. **`Link` field — associated string table**
+  - In the symbol table section’s header (`Shdr.Link`), the value is the index of the section containing the **symbol name string table**.
+
+5. **Symbol `Name` field — offset into string table**
+  - Each symbol’s `Name` field stores an **offset** into the symbol name string table.
+  - The actual symbol name is read from that offset up to the first `NUL` (`\0`) byte.
+
+6. **Similarity between "Section Name String Table" and "Symbol Name String Table"**
+  - Both are of type `SHT_STRTAB`, therefore we cannot use type to differentiate.
+  - However, symbol table is the only section with type `SHT_SYMTAB` and that's why we use it to find symbol table.
 
