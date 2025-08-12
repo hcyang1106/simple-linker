@@ -6,7 +6,7 @@ This is a simple linker implementation that helps me learn how a linker works.
 
 ## ELF File Format Overview
 
-![Subdirectory Image](images/ELF_overview.png)
+<img src="images/ELF_overview.png.png" width="400">
 *Image source: [ics.uci.edu](https://ics.uci.edu/~aburtsev/238P/hw/hw3-elf/hw3-elf.html)*
 
 ### 1. What is ELF?
