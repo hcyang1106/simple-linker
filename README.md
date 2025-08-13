@@ -104,7 +104,7 @@ These headers are **not used by the OS loader** at runtime but are essential for
 
 ---
 
-## Parsing Ehdr-related Fields
+## Ehdr-related Fields Parsing
 
 1. **Read Ehdr and verify magic number**
   - When an object file is opened, the linker enters `NewObjectFile`.
@@ -124,7 +124,7 @@ These headers are **not used by the OS loader** at runtime but are essential for
 
 ---
 
-## Symbol Table Parsing Workflow
+## Symbol Table Parsing
 
 1. **Locate the symbol table section**
   - Iterate through section headers and use the `Type` field to find the section with:
@@ -145,7 +145,105 @@ These headers are **not used by the OS loader** at runtime but are essential for
   - Each symbol’s `Name` field stores an **offset** into the symbol name string table.
   - The actual symbol name is read from that offset up to the first `NUL` (`\0`) byte.
 
-6. **Similarity between "Section Name String Table" and "Symbol Name String Table"**
-  - Both are of type `SHT_STRTAB`, therefore we cannot use type to differentiate.
-  - However, symbol table is the only section with type `SHT_SYMTAB` and that's why we use it to find symbol table.
+6. **Similarity between "Section Name String Table" and "Symbol Name String Table" and "Symbol Section Index Table"**
+  - The first two are of type `SHT_STRTAB`, therefore we cannot use type to differentiate.
+  - However, **symbol table** is the only section with type `SHT_SYMTAB` and that's why we use it to find symbol table.
+  - **Symbol section index table** (I called it this name for better understanding) is also the only section with type `SHT_SYMTAB_SHNDX`
+
+--- 
+
+## Symbol Section Index Table Parsing
+
+After parsing the symbol table, we then parse the symbol section index table.
+
+### 1. Existence of Symbol Section Index Table
+- This table may or may not exist, and could be found using `SHT_SYMTAB_SHNDX` in the `type` field of shdr.
+
+### 2. Normal Case (No Extended Index)
+- If the table exists, we use the table to find the corresponding section index. If not, we simply use the `Shndx` field in a symbol.
+
+---
+
+## Input Sections Parsing
+
+1. **Traverse Section Headers**
+  - Input sections parsing is done by iterating over every section header (`Shdr`) in the file.
+  - For each header, use its `Offset` and `Size` fields to locate and extract the section's raw data from the object file.
+
+2. **Skip Non-Output Sections**
+  - Certain sections are **functional only** and are not needed in the final output binary.
+  - Examples:
+    - Symbol table (`.symtab`)
+    - Section name string table (`.shstrtab`)
+  - These are intentionally not parsed into `InputSection` objects to save memory and processing.
+
+3. **Linking `Shdr` to `InputSection`
+  - Each `InputSection` retains a direct reference to its original `Shdr`.
+  - This is convenient because:
+    - The section header already contains key attributes like type, flags, address alignment, etc.
+    - Makes later linking stages simpler, since ELF metadata is always available with the section.
+
+4. **Resolve or Create Output Sections**
+  - While parsing each `InputSection`, the linker also determines which **output section** it should belong to (one of input section's field).
+  - If the corresponding output section already exists, the input section is attached to it.
+  - If it does not exist yet, the linker creates a new output section on the fly.
+
+---
+
+## Symbol Parsing Notes
+
+1. **Undefined vs Absolute Symbols**
+    - **Undefined symbol**: Declared in the current object but **defined in another object**.
+        - Always **global** (only global symbols can be undefined across files).
+        - During linking, relocations that reference it must be resolved to a definition found in some other object (or library).
+    - **Absolute symbol**: **Belongs to no section** (`st_shndx = SHN_ABS`).
+        - Its `st_value` is already the **final absolute address/value**.
+        - Because it’s not section-relative, the symbol’s **InputSection is `nil`** in the internal representation.
+
+2. **Create a `Symbol` structure**
+    - For each ELF symbol table entry, construct an internal `Symbol` object.
+    - Store the **parsed name**, basic metadata (index, flags), and one of:
+        - `InputSection` + section-relative `Value`, or
+        - `SectionFragment` (for mergeable sections), or
+        - nothing (for absolute/undefined, where section is not applicable). => To be confirmed!
+
+3. **Global symbol resolution via `Context`**
+    - The `Context` holds a **global symbol map** shared across all object files.
+    - When encountering an **undefined** symbol:
+        - Insert (or look up) a **placeholder** entry in the global map.
+    - When later parsing an object that **defines** that symbol:
+        - **Update/overwrite** the placeholder with the defining `Symbol` (file, section/fragment, value).
+    - This global map in `Context` is the cross-file fabric that lets the linker **resolve references across different objects**.
+
+---
+
+## Mergeable Section Parsing
+
+1. **Scan and Split**
+    - Iterate over each `InputSection`.
+    - If its `Shdr.Flags` contains `SHF_MERGE`, treat it as a **mergeable section**.
+    - Split it into smaller **fragments** according to its content type for deduplication.
+
+2. **One-to-One Mapping in `ObjectFile`**
+    - `MergeableSections` array in `ObjectFile` has the same length as `InputSections`.
+    - For a given index:
+        - If it is mergeable, `MergeableSections[i]` will be set and `InputSections[i]` will be `nil`.
+        - Otherwise, the entry remains in `InputSections` and the corresponding `MergeableSections[i]` is `nil`.
+
+3. **Determine String vs Constant and Store Fragments**
+    - Check if `Shdr.Flags` contains `SHF_STRINGS`:
+        - **String table**: data consists of `\0`-terminated strings, split by nulls.
+        - **Constants**: fixed-size items split according to `Shdr.Entsize`.
+    - Mergeable section structure contains (all in array form):
+        - Fragment offsets in the input section.
+        - The actual string or constant bytes.
+        - A `SectionFragment` object representing this piece.
+    - (Design note) The original offset and actual bytes could be stored directly inside `SectionFragment` for better understanding.
+
+4. **Meaning of `SectionFragment.Offset`**
+    - Represents the offset **within the merged output section**.
+    - Similar in concept to an `InputSection.Offset`, but on a smaller granularity.
+    - Think of a `SectionFragment` as a "mini `InputSection`" that will be combined with others in the merged output section.
+
+---
 
