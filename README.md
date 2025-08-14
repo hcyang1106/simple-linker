@@ -222,7 +222,7 @@ This step is done after input sections are parsed so that the `inputSection` fie
     - This global map in `Context` is the cross-file fabric that lets the linker **resolve references across different objects**.  
 
 The figure below shows the progress up to this step
-<img src="images/Obj_file.png" width="550">
+<img src="images/Obj_file.png" width="700">
 
 ---
 
