@@ -279,3 +279,13 @@ The figure below shows the progress up to this step:
     - When no new objects are added (i.e., `roots` becomes empty), the process is done.
 
 ---
+
+## ChangeMSecsSymbolsSection Function Implementation
+
+**Goal:** Rebind symbols that originally pointed to **mergeable input sections** so they now reference the correct **section fragment**.
+
+1. For each symbol:
+- If its section was replaced by a mergeable section, find the fragment containing its value.
+- Update the symbol to point to that fragment and clear the original input section reference.  
+
+2. Note that absolute symbol does not belong to a section and undefined symbol is not defined inside current obj file, so they could be ignored.
