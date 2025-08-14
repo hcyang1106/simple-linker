@@ -221,12 +221,14 @@ This step is done after input sections are parsed so that the `inputSection` fie
         - **Update/overwrite** the placeholder with the defining `Symbol` (file, section/fragment, value).
     - This global map in `Context` is the cross-file fabric that lets the linker **resolve references across different objects**.  
 
-The figure below shows the progress up to this step
+The figure below shows the progress up to this step:
 <img src="images/Obj_file.png" width="800">
 
 ---
 
 ## Mergeable Section Parsing
+
+<img src="images/Mergeable_section.png" width="600">
 
 1. **Scan and Split**
     - Iterate over each `InputSection`.
