@@ -104,20 +104,24 @@ These headers are **not used by the OS loader** at runtime but are essential for
 
 ---
 
-## Ehdr-related Fields Parsing
+## Ehdr Parsing
 
-1. **Read Ehdr and verify magic number**
+**Read Ehdr and verify magic number**
   - When an object file is opened, the linker enters `NewObjectFile`.
   - The first step is to parse the **ELF header (Ehdr)**.
   - Check the **magic number** (`0x7F 'E' 'L' 'F'`) in `Ehdr.Ident` to ensure this is a valid ELF file.
 
-2. **Parse section headers**
+--- 
+
+## Shdr Parsing
+
+1. **Parse section headers**
   - If the ELF header is valid, read the **section header table** using:
     - `Ehdr.Shoff` → file offset of the section headers.
     - `Ehdr.Shnum` → number of section header entries.
   - This step loads the all the section headers into the object file structure.
 
-3. **Locate and read the section name string table**
+2. **Locate and read the section name string table**
   - The index of the section name string table (`.shstrtab`) is stored in **`Ehdr.Shstrndx`**.
   - Use this index to find the `.shstrtab` section in the section header table.
   - Store the section name table into the object file structure.
@@ -154,7 +158,7 @@ These headers are **not used by the OS loader** at runtime but are essential for
 
 ## Symbol Section Index Table Parsing
 
-After parsing the symbol table, we then parse the symbol section index table.
+After parsing the symbol table, we then parse the symbol section index table (not necessarily exists).
 
 ### 1. Existence of Symbol Section Index Table
 - This table may or may not exist, and could be found using `SHT_SYMTAB_SHNDX` in the `type` field of shdr.
@@ -190,7 +194,9 @@ After parsing the symbol table, we then parse the symbol section index table.
 
 ---
 
-## Symbol Parsing Notes
+## Symbol Parsing
+
+This step is done after input sections are parsed so that the `inputSection` field in a symbol could be filled.
 
 1. **Undefined vs Absolute Symbols**
     - **Undefined symbol**: Declared in the current object but **defined in another object**.
@@ -213,7 +219,10 @@ After parsing the symbol table, we then parse the symbol section index table.
         - Insert (or look up) a **placeholder** entry in the global map.
     - When later parsing an object that **defines** that symbol:
         - **Update/overwrite** the placeholder with the defining `Symbol` (file, section/fragment, value).
-    - This global map in `Context` is the cross-file fabric that lets the linker **resolve references across different objects**.
+    - This global map in `Context` is the cross-file fabric that lets the linker **resolve references across different objects**.  
+
+The figure below shows the progress up to this step
+<img src="images/Obj_file.png" width="550">
 
 ---
 
@@ -239,6 +248,7 @@ After parsing the symbol table, we then parse the symbol section index table.
         - The actual string or constant bytes.
         - A `SectionFragment` object representing this piece.
     - (Design note) The original offset and actual bytes could be stored directly inside `SectionFragment` for better understanding.
+    - That is, mergeable section could just keep `Fragments []*SectionFragment`.
 
 4. **Meaning of `SectionFragment.Offset`**
     - Represents the offset **within the merged output section**.
@@ -247,3 +257,23 @@ After parsing the symbol table, we then parse the symbol section index table.
 
 ---
 
+## `MarkLiveObjects` Function Implementation
+
+**Goal:** Starting from the initially **alive** object files (direct `.o` inputs), iteratively pull in additional object files (usually members from archives) — until no more are needed.
+
+### Algorithm (Queue-Based)
+1. **Initialize queue**
+    - Put all objects with `IsAlive == true` (direct inputs) into `roots`.
+
+2. **Process until queue is empty**
+    - Pop one object `F` from `roots`.
+    - For every **global** symbol index `i` in `[F.FirstGlobal, F.TotalSyms)`:
+        - Let `esym = F.ElfSyms[i]`, `sym = F.Symbols[i]` (esym is original symbol data and sym is the structure we defined for ease)
+        - If `esym` is **undefined** *and* `sym.File` (the defining file recorded in the global map) is **not alive**:
+            - Mark `sym.File.IsAlive = true`.
+            - Push `sym.File` into `roots`.
+
+3. **Stop condition**
+    - When no new objects are added (i.e., `roots` becomes empty), the process is done.
+
+---
