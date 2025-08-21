@@ -43,6 +43,7 @@ func main() {
 	linker.ClearSymbolsAndFiles(ctx) // after marking alive files, we delete unused files and symbols in context
 
 	// loop through all the symbols in file and reset related input section to fragment
+	// "value" inside symbols will also be modified to the offset inside a fragment
 	linker.ChangeMSecsSymbolsSection(ctx)
 
 	// for shdr, ehdr, phdr, got
@@ -50,21 +51,29 @@ func main() {
 	// also need to update ehdr fields
 	linker.CreateSpecialWriters(ctx)
 	// fragment offsets can only be calculated after frags are confirmed (as well as the merged section size)
+	// sort the fragments (small alignment to big alignment) and assign offsets
 	linker.UpdateFragmentOffsetAndMergedSectionSizeAlign(ctx)
 
-	// since some input sections are set to nil
+	// since some input sections are set to non-alive
+	// while parsing obj it doesn't append input sections to output sections
+	// output section's input sections cannot be set at first because some will turn into non-alive afterwards
+	// whereas merged section's fragments are already setup since created
 	linker.SetOutputSectionInputSections(ctx)
 	// same as frags, need to confirm the containing input sections first
 	// so that offset and size can be calculated
+	// to my understanding, sorting is not used here because sections are not that many, so unlike fragments
+	// that are possible to be a lot, not doing sorting doesn't lose much space here
 	linker.UpdateInputSectionOffsetAndOutputSectionSizeAlign(ctx)
 
 	writers := linker.CollectOutputSectionWritersAndMergedSectionWriters(ctx)
 	ctx.OutputWriters = append(ctx.OutputWriters, writers...)
+	// ehdr, phdr, note, non-alloc after alloc, shdr last
 	linker.SortOutputWriters(ctx)
 
 	// size cannot be confirmed until all writers all confirmed
+	// seemed to be redundant
 	for _, o := range ctx.OutputWriters {
-		o.UpdateSize(ctx)
+		o.UpdateSize(ctx) // this is only for phdr and shdr (only for headers)
 	}
 
 	// only TLS symbols will appear in GOT

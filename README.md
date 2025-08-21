@@ -152,7 +152,7 @@ These headers are **not used by the OS loader** at runtime but are essential for
 6. **Similarity between "Section Name String Table" and "Symbol Name String Table" and "Symbol Section Index Table"**
   - The first two are of type `SHT_STRTAB`, therefore we cannot use type to differentiate.
   - However, **symbol table** is the only section with type `SHT_SYMTAB` and that's why we use it to find symbol table.
-  - **Symbol section index table** (I called it this name for better understanding) is also the only section with type `SHT_SYMTAB_SHNDX`
+  - (Not Necessarily Exists) **Symbol section index table** (I called it this name for better understanding) is also the only section with type `SHT_SYMTAB_SHNDX`
 
 --- 
 
@@ -234,6 +234,7 @@ The figure below shows the progress up to this step:
     - Iterate over each `InputSection`.
     - If its `Shdr.Flags` contains `SHF_MERGE`, treat it as a **mergeable section**.
     - Split it into smaller **fragments** according to its content type for deduplication.
+    - Note that we can view fragments just as input sections.
 
 2. **One-to-One Mapping in `ObjectFile`**
     - `MergeableSections` array in `ObjectFile` has the same length as `InputSections`.
@@ -280,7 +281,7 @@ The figure below shows the progress up to this step:
 
 ---
 
-## ChangeMSecsSymbolsSection Function Implementation
+## `ChangeMSecsSymbolsSection` Function Implementation
 
 **Goal:** Rebind symbols that originally pointed to **mergeable input sections** so they now reference the correct **section fragment**.
 
@@ -289,3 +290,42 @@ The figure below shows the progress up to this step:
 - Update the symbol to point to that fragment and clear the original input section reference.  
 
 2. Note that absolute symbol does not belong to a section and undefined symbol is not defined inside current obj file, so they could be ignored.
+
+---
+
+## Additional Notes
+
+1. What fields are included in the symbol structure?
+- Name (Which is the offset of the starting name string in symbol name string table)
+- Value (Offset in the section)
+- **Shndx** (Index of the section)
+- There are more but these three are important.
+
+2. What fields are in Ehdr?
+- Magic Number
+- Entry Point
+- Shdr Table Offset and Shdr Numbers
+- Phdr Table Offset and Phdr Numbers
+- **Section Name String Table Index**
+
+3. What fields are in Shdr?
+- Offset (Start of Section)
+- Type (program bits, no bits, symbol table, string table, relocation)
+- Flags (alloc, write, merge, string)
+- Address Alignment
+- Size
+
+4. **Overall Process**
+- Parse Ehdr -> Find Shdr Table -> Parse Shdr -> Loop through shdr and find symbol table using type -> Parse symbols (ElfSyms)
+-                                             -> Parse input sections
+-                                             -> Parse mergeable sections
+- Collect target object files -> Find undefined symbols and collect the corresponding files
+- Find mergeable sections and split into fragments
+
+5. **Debug Info (From ChatGPT)**
+- .eh_frame => records registers, function length, etc., for a **user program** to know how to go back to the caller function, basically used in **try catch**
+- .debug_frame => more detailed info for debugger usage
+
+6. **About Linking (From ChatGPT)**
+- Normally, Linking process uses the unit of **file**, therefore some unused functions could be possibly linked as well.
+- However, there are some flags in GCC that can be used to optimize.

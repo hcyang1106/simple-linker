@@ -35,6 +35,7 @@ func (m *MergedSection) Insert(key string, p2align uint8) *SectionFragment {
 	return m.Map[key]
 }
 
+// m.Map stores all the substrings->fragments
 func (m *MergedSection) AssignFragmentsOffsets() {
 	type f struct {
 		Key string

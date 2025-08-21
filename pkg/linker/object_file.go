@@ -190,6 +190,7 @@ func (f *ObjectFile) Parse(ctx *Context) {
 	f.SkipEhframeSections()
 	f.ParseSymbols(ctx)           // should be after parsing sections, set up sym arrays and global syms
 	// change the "mergeable input sections" into mergeable sections
+	// this seems to be able to move before parsing symbols
 	f.ParseMergeableSections(ctx) // create mergeable section array, and store fragments into merged section in ctx
 }
 
