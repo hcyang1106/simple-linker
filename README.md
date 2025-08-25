@@ -115,13 +115,13 @@ These headers are **not used by the OS loader** at runtime but are essential for
 
 ## Shdr Parsing
 
-1. **Parse section headers**
+**Parse section headers**
   - If the ELF header is valid, read the **section header table** using:
     - `Ehdr.Shoff` → file offset of the section headers.
     - `Ehdr.Shnum` → number of section header entries.
   - This step loads the all the section headers into the object file structure.
 
-2. **Locate and read the section name string table**
+--2. **Locate and read the section name string table** -- (Not done in this step!)
   - The index of the section name string table (`.shstrtab`) is stored in **`Ehdr.Shstrndx`**.
   - Use this index to find the `.shstrtab` section in the section header table.
   - Store the section name table into the object file structure.
@@ -137,6 +137,8 @@ These headers are **not used by the OS loader** at runtime but are essential for
 2. **Parse and store symbols**
   - Once found, read the symbol table entries from the section’s file offset.
   - Store the parsed entries in `ObjectFile.ElfSyms`.
+  - Also create self-defined symbol arrays and fill in the **File** field, so that MarkLiveObjects could be done in the next step.
+  - A symbol element points to the place it stores (newed so in heap), and we **utilize context to point to undefined symbols other files (see figure)**.
 
 3. **`Info` field — first global symbol index**
   - In the symbol table section’s header (`Shdr.Info`), the value represents the index of the **first global symbol**.
@@ -156,6 +158,32 @@ These headers are **not used by the OS loader** at runtime but are essential for
 
 --- 
 
+# MarkLiveObjects Function Implementation
+
+**Goal:**  
+Starting from the initially alive object files (direct `.o` inputs), iteratively pull in additional object files (usually members from archives) — until no more are needed.
+
+## Algorithm (Queue-Based)
+
+1. **Initialize queue**
+
+2. Put all objects with `IsAlive == true` (direct inputs) into `roots`.
+
+3. **Process until queue is empty**
+    - Pop one object `F` from `roots`.
+    - For every global symbol index `i` in `[F.FirstGlobal, F.TotalSyms)`:
+        - Let `esym = F.ElfSyms[i]`, `sym = F.Symbols[i]`  
+          (`esym` is original symbol data and `sym` is the structure we defined for ease)
+        - If `esym` is **undefined** and `sym.File` (the defining file recorded in the global map) is not alive:
+            - Mark `sym.File.IsAlive = true`.
+            - Push `sym.File` into `roots`.
+
+## Stop condition
+
+When no new objects are added (i.e., `roots` becomes empty), the process is done.
+
+---
+
 ## Symbol Section Index Table Parsing
 
 After parsing the symbol table, we then parse the symbol section index table (not necessarily exists).
@@ -171,58 +199,27 @@ After parsing the symbol table, we then parse the symbol section index table (no
 ## Input Sections Parsing
 
 1. **Traverse Section Headers**
-  - Input sections parsing is done by iterating over every section header (`Shdr`) in the file.
-  - For each header, use its `Offset` and `Size` fields to locate and extract the section's raw data from the object file.
+- Input sections parsing is done by iterating over every section header (`Shdr`) in the file.
+- For each header, use its `Offset` and `Size` fields to locate and extract the section's raw data from the object file.
 
 2. **Skip Non-Output Sections**
-  - Certain sections are **functional only** and are not needed in the final output binary.
-  - Examples:
+- Certain sections are **functional only** and are not needed in the final output binary.
+- Examples:
     - Symbol table (`.symtab`)
     - Section name string table (`.shstrtab`)
-  - These are intentionally not parsed into `InputSection` objects to save memory and processing.
+- These are intentionally not parsed into `InputSection` objects to save memory and processing.
 
 3. **Linking `Shdr` to `InputSection`
-  - Each `InputSection` retains a direct reference to its original `Shdr`.
-  - This is convenient because:
+- Each `InputSection` retains a direct reference to its original `Shdr`.
+- This is convenient because:
     - The section header already contains key attributes like type, flags, address alignment, etc.
     - Makes later linking stages simpler, since ELF metadata is always available with the section.
 
 4. **Resolve or Create Output Sections**
-  - While parsing each `InputSection`, the linker also determines which **output section** it should belong to (one of input section's field).
-  - If the corresponding output section already exists, the input section is attached to it.
-  - If it does not exist yet, the linker creates a new output section on the fly.
-
----
-
-## Symbol Parsing
-
-This step is done after input sections are parsed so that the `inputSection` field in a symbol could be filled.
-
-1. **Undefined vs Absolute Symbols**
-    - **Undefined symbol**: Declared in the current object but **defined in another object**.
-        - Always **global** (only global symbols can be undefined across files).
-        - During linking, relocations that reference it must be resolved to a definition found in some other object (or library).
-    - **Absolute symbol**: **Belongs to no section** (`st_shndx = SHN_ABS`).
-        - Its `st_value` is already the **final absolute address/value**.
-        - Because it’s not section-relative, the symbol’s **InputSection is `nil`** in the internal representation.
-
-2. **Create a `Symbol` structure**
-    - For each ELF symbol table entry, construct an internal `Symbol` object.
-    - Store the **parsed name**, basic metadata (index, flags), and one of:
-        - `InputSection` + section-relative `Value`, or
-        - `SectionFragment` (for mergeable sections), or
-        - nothing (for absolute/undefined, where section is not applicable). => To be confirmed!
-
-3. **Global symbol resolution via `Context`**
-    - The `Context` holds a **global symbol map** shared across all object files.
-    - When encountering an **undefined** symbol:
-        - Insert (or look up) a **placeholder** entry in the global map.
-    - When later parsing an object that **defines** that symbol:
-        - **Update/overwrite** the placeholder with the defining `Symbol` (file, section/fragment, value).
-    - This global map in `Context` is the cross-file fabric that lets the linker **resolve references across different objects**.  
-
-The figure below shows the progress up to this step:
-<img src="images/Obj_file.png" width="800">
+- While parsing each `InputSection`, the linker also determines which **output section** it should belong to (one of input section's field).
+- If the corresponding output section already exists, the input section is attached to it.
+- If it does not exist yet, the linker creates a new output section on the fly.
+- Note that **we don't put input sections into output sections in this step** because some are mergeable sections and would not stay in output section later (merged section instead).
 
 ---
 
@@ -239,7 +236,7 @@ The figure below shows the progress up to this step:
 2. **One-to-One Mapping in `ObjectFile`**
     - `MergeableSections` array in `ObjectFile` has the same length as `InputSections`.
     - For a given index:
-        - If it is mergeable, `MergeableSections[i]` will be set and `InputSections[i]` will be `nil`.
+        - If it is mergeable, `MergeableSections[i]` will be set and `InputSections[i]` will be `inAlive`.
         - Otherwise, the entry remains in `InputSections` and the corresponding `MergeableSections[i]` is `nil`.
 
 3. **Determine String vs Constant and Store Fragments**
@@ -258,38 +255,60 @@ The figure below shows the progress up to this step:
     - Similar in concept to an `InputSection.Offset`, but on a smaller granularity.
     - Think of a `SectionFragment` as a "mini `InputSection`" that will be combined with others in the merged output section.
 
----
+5. After this step, we collect **an array of fragment offsets and an array of fragments**, which will be used in the next step.
 
-## `MarkLiveObjects` Function Implementation
-
-**Goal:** Starting from the initially **alive** object files (direct `.o` inputs), iteratively pull in additional object files (usually members from archives) — until no more are needed.
-
-### Algorithm (Queue-Based)
-1. **Initialize queue**
-    - Put all objects with `IsAlive == true` (direct inputs) into `roots`.
-
-2. **Process until queue is empty**
-    - Pop one object `F` from `roots`.
-    - For every **global** symbol index `i` in `[F.FirstGlobal, F.TotalSyms)`:
-        - Let `esym = F.ElfSyms[i]`, `sym = F.Symbols[i]` (esym is original symbol data and sym is the structure we defined for ease)
-        - If `esym` is **undefined** *and* `sym.File` (the defining file recorded in the global map) is **not alive**:
-            - Mark `sym.File.IsAlive = true`.
-            - Push `sym.File` into `roots`.
-
-3. **Stop condition**
-    - When no new objects are added (i.e., `roots` becomes empty), the process is done.
 
 ---
 
-## `ChangeMSecsSymbolsSection` Function Implementation
+## Symbol Parsing
 
-**Goal:** Rebind symbols that originally pointed to **mergeable input sections** so they now reference the correct **section fragment**.
+This step is done after input sections/mergeable sections are parsed so that the `inputSection`/`SectionFragment` field in a symbol could be filled.
 
-1. For each symbol:
-- If its section was replaced by a mergeable section, find the fragment containing its value.
-- Update the symbol to point to that fragment and clear the original input section reference.  
+1. **Undefined vs Absolute Symbols**
+    - **Undefined symbol**: Declared in the current object but **defined in another object**.
+        - Always **global** (only global symbols can be undefined across files).
+        - During linking, relocations that reference it must be resolved to a definition found in some other object (or library).
+    - **Absolute symbol**: **Belongs to no section** (`st_shndx = SHN_ABS`).
+        - Its `st_value` is already the **final absolute address/value**.
+        - Because it’s not section-relative, the symbol’s **InputSection is `nil`** in the internal representation.
 
-2. Note that absolute symbol does not belong to a section and undefined symbol is not defined inside current obj file, so they could be ignored.
+2. Basically this step is used to **setup the input section/section fragment the symbols belong to**.
+
+---
+
+## UpdateFragmentOffsetAndMergedSectionSizeAlign(ctx) and UpdateInputSectionOffsetAndOutputSectionSizeAlign(ctx)
+
+- Both input sections and fragments have **alignments and sizes**. We utilize these two fields to calculate the **sizes and alignments**
+of output sections and merged sections. Output should always align to the **largest alignment of its component**.
+- Note that we sort the fragments first and this can save spaces, preventing from leaving a lot of unused spaces (because of alignment).
+
+---
+
+## SortOutputWriters
+
+- The output order is set as => ehdr, phdr table, notes, allocated sections, non-allocted sections, shdr table
+- For allocated sections it is arranged in the order of => non-writable, executable, TLS, non-BSS
+
+---
+
+## SetOutputShdrOffsets
+
+- The Shdr here does not mean the section header. It is just a borrowing of the structure to store attributes of an output writer.
+- After the sizes and alignment of the output writers are confirmed, we can calculate the Addr and Offset and store it in Shdr.
+- Offset will be used while copying to buffer.
+
+---
+
+## Create Phdrs
+- Program segments are created and they include phdr, note, load, and TLS segments.
+- Each load segment is ended until bss sections end. Non-allocated sections are not put into load segments.
+- Note that TLS sections are loaded as well (except for tlbss), and a TLS segment is created so that a thread can rely on it to do copying/zeroing.
+
+---
+
+## CopyBuf
+- Execute all the `CopyBuf` functions in output writers.
+- Beside copying the content from input sections to the buffer, it also applies relocation to replace the undetermined addresses with correct addresses.
 
 ---
 
@@ -316,11 +335,11 @@ The figure below shows the progress up to this step:
 - Size
 
 4. **Overall Process**
-- Parse Ehdr -> Find Shdr Table -> Parse Shdr -> Loop through shdr and find symbol table using type -> Parse symbols (ElfSyms)
--                                             -> Parse input sections
--                                             -> Parse mergeable sections
-- Collect target object files -> Find undefined symbols and collect the corresponding files
-- Find mergeable sections and split into fragments
+- Parse Ehdr -> Find Shdr Table -> Parse Shdr -> Loop through shdr and find symbol table using type -> Parse symbols' name and file belonged & calculate fragment symbol value
+- -> MarkLiveObjects -> Parse input sections -> Parse mergeable sections -> Parse symbols (setup input section/fragment)
+- -> Sort fragments and calculate merged section size & align -> Calculate output section size & align                                            
+- -> Create special writers and concat all writers -> Sort output writers -> Set output writers addresses and offsets
+- -> Write output writers' contents using offset & fill in relocated symbols
 
 5. **Debug Info (From ChatGPT)**
 - .eh_frame => records registers, function length, etc., for a **user program** to know how to go back to the caller function, basically used in **try catch**
@@ -329,3 +348,34 @@ The figure below shows the progress up to this step:
 6. **About Linking (From ChatGPT)**
 - Normally, Linking process uses the unit of **file**, therefore some unused functions could be possibly linked as well.
 - However, there are some flags in GCC that can be used to optimize.
+
+7. **About Global Variable Initializing**
+- We can init a pointer variable using another variable's address since the address is resolved while linking
+- However we can't init a normal variable using another variable's value, unless we use a constant.
+- (Since we need to **load it first** but loading can only be done at runtime.)
+
+8. **About TLS (From ChatGPT)**
+- TLS data section will be loaded to memory as well and is used as a template for thread creation.
+- Thread creation needs TLS phdr infos (e.g. memSize to setup tls bss).
+- While accessing a thread-local variable, a **tp relative relocation (R_RISCV_TPREL_XXX)** will be generated, which is calculated as **S+A-TLS Segment Start**
+- And the result is combined with a thread pointer to access the thread-local variable.
+
+9. **Relocations**
+- Relocation info (Rela struct) includes offset (within a section), type, and sym (symbol index in file)
+- S is symbol address and P is current address (relocation points to)
+- JAL imm => pc relative offset
+- BRANCH imm => pc relative
+- JALR imm => set (reg value + imm ) as absolute address
+- Function call is a combination of auipc + jalr => pc relative
+- R_RISCV_64 will be used when we do int *p = &extern_var
+- For some TLS variables they have needs to use GOT to get their offsets from thread pointer. Therefore,
+  linker has to create a GOT section and resolve the addresses of the entries.
+- (Basically the assembly code will find the corresponding entry for the symbol and load it, and further use the loaded entry (stored offset) to load their thread local variables)
+- (Therefore linker is responsible for creating the GOT and fill in the **entry address** of the symbols)
+
+10. **PIC and NON PIC Code**
+- Some **relative addresses can be confirmed during linking process**, for example, R_RISCV_JAL and R_RISCV_BRANCH.
+- Non pic code can only run on specific addresses and pic code can be placed anywhere.
+
+11. **Next Alignment Code**
+- To do next alignment, we can do (value + alignment - 1) & (~(alignment - 1))
