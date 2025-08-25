@@ -188,10 +188,10 @@ When no new objects are added (i.e., `roots` becomes empty), the process is done
 
 After parsing the symbol table, we then parse the symbol section index table (not necessarily exists).
 
-### 1. Existence of Symbol Section Index Table
+1. **Existence of Symbol Section Index Table**
 - This table may or may not exist, and could be found using `SHT_SYMTAB_SHNDX` in the `type` field of shdr.
 
-### 2. Normal Case (No Extended Index)
+2. **Normal Case (No Extended Index)**
 - If the table exists, we use the table to find the corresponding section index. If not, we simply use the `Shndx` field in a symbol.
 
 ---
