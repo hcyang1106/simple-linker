@@ -276,7 +276,7 @@ This step is done after input sections/mergeable sections are parsed so that the
 
 ---
 
-## UpdateFragmentOffsetAndMergedSectionSizeAlign(ctx) and UpdateInputSectionOffsetAndOutputSectionSizeAlign(ctx)
+## UpdateFragmentOffsetAndMergedSectionSizeAlign and UpdateInputSectionOffsetAndOutputSectionSizeAlign
 
 - Both input sections and fragments have **alignments and sizes**. We utilize these two fields to calculate the **sizes and alignments**
 of output sections and merged sections. Output should always align to the **largest alignment of its component**.
@@ -284,7 +284,7 @@ of output sections and merged sections. Output should always align to the **larg
 
 ---
 
-## SortOutputWriters
+## Sort Output Writers
 
 - The output order is set as => ehdr, phdr table, notes, allocated sections, non-allocted sections, shdr table
 - For allocated sections it is arranged in the order of => non-writable, executable, TLS, non-BSS
