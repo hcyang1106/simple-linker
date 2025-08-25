@@ -158,12 +158,12 @@ These headers are **not used by the OS loader** at runtime but are essential for
 
 --- 
 
-# MarkLiveObjects Function Implementation
+## MarkLiveObjects Function Implementation
 
 **Goal:**  
 Starting from the initially alive object files (direct `.o` inputs), iteratively pull in additional object files (usually members from archives) — until no more are needed.
 
-## Algorithm (Queue-Based)
+### Algorithm (Queue-Based)
 
 1. **Initialize queue**
 
@@ -178,7 +178,7 @@ Starting from the initially alive object files (direct `.o` inputs), iteratively
             - Mark `sym.File.IsAlive = true`.
             - Push `sym.File` into `roots`.
 
-## Stop condition
+### Stop condition
 
 When no new objects are added (i.e., `roots` becomes empty), the process is done.
 
