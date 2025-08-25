@@ -83,6 +83,7 @@ func (m *MergedSection) CopyBuf(ctx *Context) {
 	start := ctx.Buf[m.Shdr.Offset:]
 	for key, frag := range m.Map {
 		// no need to align because it is already aligned
+		// map is unordered but offsets are already assigned
 		copy(start[frag.Offset:], key)
 	}
 }

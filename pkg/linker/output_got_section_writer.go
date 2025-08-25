@@ -27,6 +27,6 @@ func (g *OutputGotSectionWriter) AddGotTLSSym(sym *Symbol) {
 func (g *OutputGotSectionWriter) CopyBuf(ctx *Context) {
 	base := ctx.Buf[g.Shdr.Offset:]
 	for idx, sym := range g.GotTLSSyms {
-		utils.Write[uint64](base[idx*8:], sym.GetAddr() - ctx.TLSSegmentAddr)
+		utils.Write[uint64](base[idx*8:], sym.GetAddr() - ctx.TLSSegmentAddr) // stores the offset from tp!
 	}
 }

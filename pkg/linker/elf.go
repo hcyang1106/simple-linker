@@ -71,9 +71,9 @@ type Sym struct {
 }
 
 type Rela struct {
-	Offset uint64
+	Offset uint64 // offset in a section
 	Type   uint32
-	Sym    uint32
+	Sym    uint32 // index of a symbol in the symbol array
 	Addend int64
 }
 

@@ -40,11 +40,14 @@ func main() {
 	ctx.FillInObjFiles(remaining) // remaining contains specific libraries or obj files
 
 	linker.MarkLiveObjects(ctx)
-	linker.ClearSymbolsAndFiles(ctx) // after marking alive files, we delete unused files and symbols in context
+
+	//linker.ClearSymbolsAndFiles(ctx) // after marking alive files, we delete unused files and symbols in context
+
+	linker.ParseFiles(ctx)
 
 	// loop through all the symbols in file and reset related input section to fragment
 	// "value" inside symbols will also be modified to the offset inside a fragment
-	linker.ChangeMSecsSymbolsSection(ctx)
+	//linker.ChangeMSecsSymbolsSection(ctx)
 
 	// for shdr, ehdr, phdr, got
 	// need to update size and offset, but before that outputwriters slice should be confirmed

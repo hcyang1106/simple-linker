@@ -24,7 +24,7 @@ func NewOutputPhdrsWriter() *OutputPhdrsWriter {
 }
 
 func (o *OutputPhdrsWriter) UpdateSize(ctx *Context) {
-	o.createPhdrs(ctx)
+	o.CreatePhdrs(ctx)
 	o.Shdr.Size = uint64(len(o.Phdrs)) * uint64(PhdrSize)
 }
 
@@ -40,7 +40,8 @@ func (o *OutputPhdrsWriter) CopyBuf(ctx *Context) {
 // phdr memory size represents the size occupying the mem
 // mem size >= file size because of bss
 // phdrs: phdr, note
-func (o *OutputPhdrsWriter) createPhdrs(ctx *Context) {
+// why phdr needs offset? => in disk we can only utilize offsets to find the correct locations
+func (o *OutputPhdrsWriter) CreatePhdrs(ctx *Context) {
 	o.Phdrs = make([]Phdr, 0)
 	define := func(typ, flags uint32, minAlign uint64, outputWriter iOutputWriter) {
 		o.Phdrs = append(o.Phdrs, Phdr{})
@@ -81,20 +82,24 @@ func (o *OutputPhdrsWriter) createPhdrs(ctx *Context) {
 	define(uint32(elf.PT_PHDR), uint32(elf.PF_R), 8, ctx.OutputPhdrsWriter)
 
 	// note segment
-	for i := 0; i < len(ctx.OutputWriters); i++ {
+	for i := 0; i < len(ctx.OutputWriters); {
 		iCurr := ctx.OutputWriters[i]
 		if !isNOTE(iCurr) {
+			i++
 			continue
 		}
 		flags := outputWriterAttrToPhdrFlags(iCurr)
 		align := iCurr.GetShdr().AddrAlign
 		define(uint32(elf.PT_NOTE), flags, align, iCurr)
-		for j := i + 1; j < len(ctx.OutputWriters); j++ {
-			jCurr := ctx.OutputWriters[j]
+		i++
+		for i < len(ctx.OutputWriters) {
+			jCurr := ctx.OutputWriters[i]
 			if !isNOTE(jCurr) || outputWriterAttrToPhdrFlags(jCurr) != flags {
+				i++
 				break
 			}
 			push(jCurr)
+			i++
 		}
 	}
 

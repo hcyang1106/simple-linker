@@ -13,8 +13,12 @@ mkdir -p $test_path
 # -o => provide custom names
 cat <<EOF | $CC -xc - -c -o $test_path/a.o
 #include <stdio.h>
+#include <stdlib.h>
 int main(void) {
     printf("Hello, World\n");
+    int *p = malloc(sizeof(int));
+    *p = 10;
+    printf("%d\n", *p);
     return 0;
 }
 EOF

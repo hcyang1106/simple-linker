@@ -67,7 +67,7 @@ func NewObjectFile(file *File, isAlive bool, ctx *Context) {
 	}
 	f.ShStrTab = f.GetBytesFromIdx(shStrndx)
 
-	f.Parse(ctx)
+	f.ParseSymTab(ctx)
 	ctx.Args.ObjFiles = append(ctx.Args.ObjFiles, &f)
 }
 
@@ -104,28 +104,44 @@ func (f *ObjectFile) FindSectionHdr(secType uint32) *Shdr {
 
 // the input is symbol table section header
 // "Sym" structure is exactly how symbol is stored in elf
-func (f *ObjectFile) FillInElfSyms(shdr *Shdr) {
+func (f *ObjectFile) FillInElfSymsAndSymbols(ctx *Context, shdr *Shdr) {
 	bs := f.GetBytesFromShdr(shdr)
 	nums := len(bs) / SymSize
 	f.ElfSyms = make([]Sym, nums)
+	f.Symbols = make([]*Symbol, nums)
+	f.TotalSyms = uint32(nums)
 	for i := 0; i < nums; i++ {
 		s := Sym{}
 		utils.Read[Sym](bs, &s)
 		f.ElfSyms[i] = s
+
+		name := ElfGetName(f.SymStrTab, s.Name)
+		if uint32(i) < f.FirstGlobal {
+			symbol := NewSymbol(f, name)
+			symbol.File = f
+			f.Symbols[i] = symbol
+		} else {
+			f.Symbols[i] = ctx.GetSymbol(name)
+			if !s.IsUndef() {
+				(*f.Symbols[i]).File = f
+			}
+		}
+
 		bs = bs[SymSize:] // does not panic if idx reaches length
 	}
 }
 
+// fill in elfSyms (name is simply the offset)
 // find symbol table section header and
 // create symbol array
 // symbol table can be found using its type
 // however section name string table cannot, so it's stored in Ehdr
-func (f *ObjectFile) ParseSymTab() {
+func (f *ObjectFile) ParseSymTab(ctx *Context) {
 	f.SymTabSecHdr = f.FindSectionHdr(uint32(elf.SHT_SYMTAB))
 	if f.SymTabSecHdr != nil {
 		f.FirstGlobal = f.SymTabSecHdr.Info
-		f.FillInElfSyms(f.SymTabSecHdr)
 		f.SymStrTab = f.GetBytesFromIdx(f.SymTabSecHdr.Link)
+		f.FillInElfSymsAndSymbols(ctx, f.SymTabSecHdr)
 	}
 }
 
@@ -142,56 +158,81 @@ func (f *ObjectFile) ParseSymtabShndxSec() {
 // abs => no section
 // special sections' symbol => input sections is not filled
 func (f *ObjectFile) ParseSymbols(ctx *Context) {
-	f.LocalSymbols = make([]*Symbol, 0)
-	f.Symbols = make([]*Symbol, 0) // all symbols
+	//f.LocalSymbols = make([]*Symbol, 0)
+	//f.Symbols = make([]*Symbol, 0) // all symbols
 
-	var i uint32
-	for _, esym := range f.ElfSyms {
+	//var i uint32
+	//for _, esym := range f.ElfSyms {
+	//	if i == 0 {
+	//		// first symbol is not used
+	//		first := NewSymbol(f, "")
+	//		f.LocalSymbols = append(f.LocalSymbols, first)
+	//		f.Symbols = append(f.Symbols, first)
+	//		i += 1
+	//		continue
+	//	}
+	//
+	//	name := ElfGetName(f.SymStrTab, esym.Name)
+	//	sym := NewSymbol(f, name)
+	//	sym.SetValue(esym.Val)
+	//	sym.SetSymIdx(i)
+	//	if !esym.IsAbs() {
+	//		shndx := esym.GetShndx(f.SymtabShndxSec, i)
+	//		sym.SetInputSection(f.InputSections[shndx])
+	//	}
+	//
+	//	if i < f.FirstGlobal {
+	//		f.LocalSymbols = append(f.LocalSymbols, sym)
+	//		f.Symbols = append(f.Symbols, sym)
+	//		i += 1
+	//		continue
+	//	}
+	//	// only global symbols could be undefined
+	//	gSym := ctx.GetSymbol(name)
+	//	f.Symbols = append(f.Symbols, gSym)
+	//	if !esym.IsUndef() {
+	//		*gSym = *sym
+	//	}
+	//	i += 1
+	//}
+
+	//f.TotalSyms = i
+
+	for i, esym := range f.ElfSyms {
 		if i == 0 {
-			// first symbol is not used
-			first := NewSymbol(f, "")
-			f.LocalSymbols = append(f.LocalSymbols, first)
-			f.Symbols = append(f.Symbols, first)
-			i += 1
 			continue
 		}
-
-		name := ElfGetName(f.SymStrTab, esym.Name)
-		sym := NewSymbol(f, name)
-		sym.SetValue(esym.Val)
-		sym.SetSymIdx(i)
-		if !esym.IsAbs() {
-			shndx := esym.GetShndx(f.SymtabShndxSec, i)
-			sym.SetInputSection(f.InputSections[shndx])
+		if !esym.IsAbs() && !esym.IsUndef() && !esym.IsCommon() {
+			sym := f.Symbols[i]
+			shndx := esym.GetShndx(f.SymtabShndxSec, uint32(i))
+			iSec := f.InputSections[shndx]
+			mSec := f.MergeableSections[shndx]
+			if iSec == nil {
+				continue
+			}
+			if iSec.IsAlive && mSec == nil {
+				sym.SetInputSection(iSec)
+				sym.SetValue(esym.Val)
+			} else if !iSec.IsAlive && mSec != nil {
+				frag, fragOffset := mSec.GetFragment(esym.Val) // return offset within the fragment
+				if frag == nil {
+					utils.Fatal("Symbol not in fragment")
+				}
+				sym.SetSectionFragment(frag)
+				sym.Value = fragOffset
+			}
 		}
-
-		if i < f.FirstGlobal {
-			f.LocalSymbols = append(f.LocalSymbols, sym)
-			f.Symbols = append(f.Symbols, sym)
-			i += 1
-			continue
-		}
-		// only global symbols could be undefined
-		gSym := ctx.GetSymbol(name)
-		f.Symbols = append(f.Symbols, gSym)
-		if !esym.IsUndef() {
-			*gSym = *sym
-		}
-		i += 1
 	}
-
-	f.TotalSyms = i
 }
 
-func (f *ObjectFile) Parse(ctx *Context) {
-	f.ParseSymTab()         // fill in elfSyms (name is simply the offset)
+func (f *ObjectFile) ParseFile(ctx *Context) {
 	f.ParseSymtabShndxSec() // if there exist the section
 	f.ParseInputSections(ctx)
 	f.SkipEhframeSections()
+	f.ParseMergeableSections(ctx) // create mergeable section array, and store fragments into merged section in ctx
 	f.ParseSymbols(ctx)           // should be after parsing sections, set up sym arrays and global syms
 	// change the "mergeable input sections" into mergeable sections
 	// this seems to be able to move before parsing symbols
-	f.ParseMergeableSections(ctx) // create mergeable section array, and store fragments into merged section in ctx
 }
 
 // fill in input sections field

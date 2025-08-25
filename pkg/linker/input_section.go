@@ -138,6 +138,7 @@ func (i *InputSection) ScanRelsFindGotSyms() {
 
 // relocations can be divided into multiple kinds,
 // absolute address, pc relative address, or got entry relative address
+// base is the starting address of the section
 func (i *InputSection) ApplyRelocAlloc(ctx *Context, base []byte) {
 	rels := i.GetRels()
 
@@ -160,15 +161,20 @@ func (i *InputSection) ApplyRelocAlloc(ctx *Context, base []byte) {
 		P := i.GetAddr() + rel.Offset
 
 		switch elf.R_RISCV(rel.Type) {
-		case elf.R_RISCV_32: // for example, pointer values
+		case elf.R_RISCV_32:
 			utils.Write[uint32](loc, uint32(S+A))
 		case elf.R_RISCV_64:
 			utils.Write[uint64](loc, S+A)
 		case elf.R_RISCV_BRANCH:
+			// pc relative offset
 			writeBtype(loc, uint32(S+A-P))
 		case elf.R_RISCV_JAL:
+			// pc relative offset
 			writeJtype(loc, uint32(S+A-P))
 		case elf.R_RISCV_CALL, elf.R_RISCV_CALL_PLT:
+			// call uses auipc and jalr to jump to a function
+			// needs a register as a base so use jalr instead of jal
+			// R_RISCV_CALL is now deprecated, R_RISCV_CALL_PLT only
 			val := uint32(S + A - P)
 			writeUtype(loc, val)
 			writeItype(loc[4:], val)
@@ -176,7 +182,7 @@ func (i *InputSection) ApplyRelocAlloc(ctx *Context, base []byte) {
 			utils.Write[uint32](loc, uint32(sym.GetGotEntryAddr(ctx)+A-P))
 		case elf.R_RISCV_PCREL_HI20:
 			utils.Write[uint32](loc, uint32(S+A-P))
-		case elf.R_RISCV_HI20:
+		case elf.R_RISCV_HI20: // %high(symbol)
 			writeUtype(loc, uint32(S+A))
 		case elf.R_RISCV_LO12_I, elf.R_RISCV_LO12_S:
 			val := S + A
@@ -203,6 +209,8 @@ func (i *InputSection) ApplyRelocAlloc(ctx *Context, base []byte) {
 		}
 	}
 
+	// usually combined with R_RISCV_PCREL_HI20 (auipc)
+	// %pc_rel(symbol)
 	for a := 0; a < len(rels); a++ {
 		switch elf.R_RISCV(rels[a].Type) {
 		case elf.R_RISCV_PCREL_LO12_I, elf.R_RISCV_PCREL_LO12_S:

@@ -18,6 +18,15 @@ func MarkLiveObjects(ctx *Context) {
 		roots = roots[0].MarkLiveObjects(ctx, roots)
 		roots = roots[1:]
 	}
+
+	newObjs := make([]*ObjectFile, 0)
+	for _, file := range ctx.Args.ObjFiles {
+		if file.IsAlive {
+			newObjs = append(newObjs, file)
+		}
+	}
+
+	ctx.Args.ObjFiles = newObjs
 }
 
 func ClearSymbolsAndFiles(ctx *Context) {
@@ -44,6 +53,12 @@ func ClearUnusedFiles(ctx *Context) {
 	ctx.Args.ObjFiles = ctx.Args.ObjFiles[:i]
 }
 
+func ParseFiles(ctx *Context) {
+	for _, file := range ctx.Args.ObjFiles {
+		file.ParseFile(ctx)
+	}
+}
+
 // change symbol corresponding sections to "fragments"
 func ChangeMSecsSymbolsSection(ctx *Context) {
 	for _, file := range ctx.Args.ObjFiles {
@@ -58,12 +73,13 @@ func CreateSpecialWriters(ctx *Context) {
 	}
 	ctx.OutputEhdrWriter = push(NewOutputEhdrWriter()).(*OutputEhdrWriter)
 	ctx.OutputPhdrsWriter = push(NewOutputPhdrsWriter()).(*OutputPhdrsWriter)
-	ctx.OutputShdrsWriter = push(NewOutputShdrsWriter()).(*OutputShdrsWriter)
+	//ctx.OutputShdrsWriter = push(NewOutputShdrsWriter()).(*OutputShdrsWriter)
 	ctx.OutputGotSectionWriter = push(NewOutputGotSectionWriter()).(*OutputGotSectionWriter)
 }
 
 // get called after CreateSpecialWriters,
 // since OutputWriters have to be filled
+// size and align are calculated in previous steps
 func SetOutputShdrOffsets(ctx *Context) uint64 {
 	addr := ADDR_BASE
 	for _, o := range ctx.OutputWriters {
@@ -74,11 +90,14 @@ func SetOutputShdrOffsets(ctx *Context) uint64 {
 		addr = utils.AlignTo(addr, o.GetShdr().AddrAlign)
 		o.GetShdr().Addr = addr
 
+		// thread bss is only created after thread is created
+		// thread data is copied to its space after thread is created
 		if !isTBSS(o) {
 			addr += o.GetShdr().Size
 		}
 	}
 
+	// after address are all setup, we can calculate the offset within the output file
 	i := 0
 	first := ctx.OutputWriters[0]
 	for {
@@ -102,7 +121,8 @@ func SetOutputShdrOffsets(ctx *Context) uint64 {
 		fileoff += shdr.Size
 	}
 
-	ctx.OutputPhdrsWriter.UpdateSize(ctx)
+	//ctx.OutputPhdrsWriter.UpdateSize(ctx)
+	ctx.OutputPhdrsWriter.CreatePhdrs(ctx)
 	return fileoff
 }
 
@@ -152,7 +172,7 @@ func SortOutputWriters(ctx *Context) {
 		typ := o.GetShdr().Type
 		flags := o.GetShdr().Flags
 
-		// non-allocs are behind
+		// non-allocs are behind, such as relocation, symbol table
 		if flags&uint64(elf.SHF_ALLOC) == 0 {
 			return math.MaxInt32 - 1
 		}

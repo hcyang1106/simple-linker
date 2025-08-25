@@ -63,11 +63,11 @@ func (o *OutputEhdrWriter) CopyBuf(ctx *Context) {
 	ehdr.Entry = getEntryAddress(ctx)
 	ehdr.EhSize = uint16(EhdrSize)
 	ehdr.PhEntSize = uint16(PhdrSize)
-	ehdr.ShOff = ctx.OutputShdrsWriter.Shdr.Offset
+	//ehdr.ShOff = ctx.OutputShdrsWriter.Shdr.Offset
 	ehdr.ShEntSize = uint16(ShdrSize)
 	ehdr.PhOff = ctx.OutputPhdrsWriter.Shdr.Offset
 	ehdr.PhNum = uint16(ctx.OutputPhdrsWriter.Shdr.Size / uint64(PhdrSize))
-	ehdr.ShNum = uint16(ctx.OutputShdrsWriter.Shdr.Size / uint64(ShdrSize))
+	//ehdr.ShNum = uint16(ctx.OutputShdrsWriter.Shdr.Size / uint64(ShdrSize))
 	buf := bytes.Buffer{}
 	err := binary.Write(&buf, binary.LittleEndian, ehdr)
 	utils.MustNo(err)
